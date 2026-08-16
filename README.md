@@ -13,6 +13,23 @@ software with physically-motivated transforms, keeping the ground-truth lane mas
 degradation is controlled and repeatable. The result is a degradation curve of IoU/F1 versus
 fog density and illumination level for each method.
 
+## Preliminary results
+
+On 200 validation frames (fog β sweep, exposure-factor sweep), the two methods degrade very
+differently — a central finding:
+
+| Condition          | Classical IoU | TwinLiteNet IoU |
+|--------------------|--------------:|----------------:|
+| Clear              | 0.108         | **0.381**       |
+| Fog  β = 0.03      | 0.103         | 0.040           |
+| Fog  β = 0.10      | 0.057         | **0.004**       |
+| Exposure × 0.2     | 0.013         | **0.353**       |
+
+The learned model (trained on BDD100K) is robust to reduced illumination but collapses
+catastrophically under fog — falling *below* the classical baseline — while the classical
+pipeline degrades gracefully under fog but fails in the dark. Full numbers are in
+`outputs/degradation_curve.csv`.
+
 ## Degradation model
 
 - **Fog**: Koschmieder attenuation `I_out = I·t + A·(1 − t)` with transmittance `t = e^(−β·d)`,
@@ -91,12 +108,14 @@ Outputs land in `outputs/`:
 
 ### Adding the learned baseline (TwinLiteNet)
 
-The learned model runs the pretrained TwinLiteNet ONNX checkpoint through `onnxruntime`
-(no PyTorch required):
+The learned model is the official pretrained TwinLiteNet (0.44M params), run in PyTorch via
+the vendored architecture in `models/twinlite_arch.py` (input 640×360, RGB, /255, as in the
+authors' `test_image.py`):
 
-1. Download the pretrained ONNX model from the
-   [official TwinLiteNet repo](https://github.com/chequanghung/TwinLiteNet).
-2. Save it to `data/weights/twinlitelite.onnx` (or set `TWINLITE_MODEL=/path/to/model.onnx`).
+1. Download the pretrained checkpoint from the
+   [official TwinLiteNet repo](https://github.com/chequanghuy/TwinLiteNet)
+   (`pretrained/best.pth`, ~1.8 MB).
+2. Save it to `data/weights/best.pth` (or set `TWINLITE_MODEL=/path/to/best.pth`).
 3. Re-run including both methods:
 
 ```sh

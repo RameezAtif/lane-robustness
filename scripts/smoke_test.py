@@ -48,10 +48,11 @@ def main():
         print(f"{cond:>5} {sev:>10} {iou:7.3f} {f1:7.3f}")
 
     try:
-        TwinLiteModel()
-        print("twinlite: model loaded (unexpected without weights)")
+        tl = TwinLiteModel()
+        pred = tl.detect_lane_mask(img)
+        print(f"twinlite: OK -> IoU on synthetic frame = {metrics.iou(pred, gt):.3f}")
     except FileNotFoundError as e:
-        print("twinlite: guard OK ->", str(e)[:60], "...")
+        print("twinlite: weights not present (expected on a fresh checkout) ->", str(e)[:60], "...")
 
 
 if __name__ == "__main__":

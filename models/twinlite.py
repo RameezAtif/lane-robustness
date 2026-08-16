@@ -1,64 +1,58 @@
-"""TwinLiteNet wrapper (learned baseline).
+"""TwinLiteNet learned baseline.
 
-Runs the pretrained TwinLiteNet ONNX model via onnxruntime. Torch is NOT required;
-keep the pipeline light. The checkpoint is downloaded separately (see
-download instructions below) and cached at data/weights/twinlitelite.onnx.
-
-Downloads (official repo: https://github.com/chequanghung/TwinLiteNet):
-  - Put the pretrained ONNX model at data/weights/twinlitelite.onnx,
-    or set the TWINLITE_MODEL env var to its path.
+Runs the official pretrained checkpoint (pretrained/best.pth, 0.44M params) from
+https://github.com/chequanghuy/TwinLiteNet through the vendored architecture in
+models/twinlite_arch.py. Input is resized to 640x360 (matching the official
+test_image.py), converted BGR->RGB, normalised to [0,1]; the lane branch output is
+the second of the two logit maps, thresholded by argmax over its channel axis.
 """
 import os
 from pathlib import Path
 
+import cv2
 import numpy as np
+import torch
 
 import config
+from models import twinlite_arch
 
-INPUT_H, INPUT_W = 320, 640
+INPUT_W, INPUT_H = 640, 360
 
 
-def _load_session(model_path):
-    import onnxruntime as ort
+def _default_weight_path():
+    return (os.environ.get("TWINLITE_MODEL")
+            or str(config.DATA_ROOT.parent / "weights" / "best.pth"))
 
-    providers = ["CPUExecutionProvider"]
-    if ort.get_available_providers() and "CoreMLExecutionProvider" in ort.get_available_providers():
-        providers = ["CoreMLExecutionProvider", "CPUExecutionProvider"]
-    return ort.InferenceSession(str(model_path), providers=providers)
+
+def _strip_dataparallel(state_dict):
+    return {k.replace("module.", ""): v for k, v in state_dict.items()}
 
 
 class TwinLiteModel:
-    def __init__(self, model_path=None):
-        model_path = model_path or os.environ.get("TWINLITE_MODEL") or str(config.ROOT / "data" / "weights" / "twinlitelite.onnx")
+    def __init__(self, model_path=None, device=None):
+        model_path = model_path or _default_weight_path()
         if not Path(model_path).exists():
             raise FileNotFoundError(
-                f"TwinLiteNet weights not found at {model_path}. Download the pretrained "
-                f"ONNX model from the official TwinLiteNet repo "
-                f"(https://github.com/chequanghung/TwinLiteNet) and place it there, "
-                f"or set TWINLITE_MODEL."
+                f"TwinLiteNet weights not found at {model_path}. Download them from "
+                "https://github.com/chequanghuy/TwinLiteNet (pretrained/best.pth) and "
+                f"place them at {Path(model_path)}, or set TWINLITE_MODEL."
             )
-        self.session = _load_session(model_path)
-        self.input_name = self.session.get_inputs()[0].name
-        self.output_name = self.session.get_outputs()[0].name
+        if device is None:
+            device = "mps" if torch.backends.mps.is_available() else "cpu"
+        self.device = torch.device(device)
+        self.model = twinlite_arch.TwinLiteNet()
+        state = torch.load(model_path, map_location="cpu", weights_only=True)
+        state = _strip_dataparallel(state)
+        self.model.load_state_dict(state)
+        self.model.eval().to(self.device)
 
-    def detect_lane_mask(self, img, threshold=0.5):
+    @torch.no_grad()
+    def detect_lane_mask(self, img, threshold=None):
         ih, iw = img.shape[:2]
-        resized = np.asarray(img.resize((INPUT_W, INPUT_H))) if hasattr(img, "resize") else _resize(img)
-        inp = resized[None].transpose(0, 3, 1, 2).astype(np.float32) / 255.0
-        out = self.session.run([self.output_name], {self.input_name: inp})[0]
-        lane_probs = out[0, 1] if out.shape[1] == 2 else out[0, 0]
-        lane_probs = np.clip(lane_probs, 0.0, 1.0)
-        small = (lane_probs >= threshold).astype(np.uint8) * 255
-        return _resize_back(small, iw, ih)
-
-
-def _resize(img):
-    import cv2
-
-    return cv2.resize(img, (INPUT_W, INPUT_H), interpolation=cv2.INTER_LINEAR)
-
-
-def _resize_back(mask, w, h):
-    import cv2
-
-    return cv2.resize(mask, (w, h), interpolation=cv2.INTER_NEAREST)
+        resized = cv2.resize(img, (INPUT_W, INPUT_H), interpolation=cv2.INTER_LINEAR)
+        rgb = cv2.cvtColor(resized, cv2.COLOR_BGR2RGB)
+        tensor = torch.from_numpy(rgb.transpose(2, 0, 1)[None]).float().to(self.device) / 255.0
+        _, lane_logits = self.model(tensor)
+        lane = lane_logits[0].argmax(0).byte().cpu().numpy()
+        mask = (lane > 0).astype(np.uint8) * 255
+        return cv2.resize(mask, (iw, ih), interpolation=cv2.INTER_NEAREST)
