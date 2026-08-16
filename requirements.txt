@@ -1,0 +1,8 @@
+numpy
+opencv-python
+matplotlib
+pillow
+tqdm
+pandas
+onnxruntime
+kaggle
