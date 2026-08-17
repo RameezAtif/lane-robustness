@@ -6,6 +6,7 @@ method, severity) level.
 """
 import argparse
 import csv
+import random
 import time
 from pathlib import Path
 
@@ -78,6 +79,13 @@ def main():
     args = ap.parse_args()
 
     assert args.methods, "pass at least one method, e.g. --methods classical twinlite"
+
+    random.seed(config.SEED)
+    np.random.seed(config.SEED)
+    if "twinlite" in args.methods:
+        import torch
+
+        torch.manual_seed(config.SEED)
 
     outdir = Path(args.outdir)
     outdir.mkdir(parents=True, exist_ok=True)

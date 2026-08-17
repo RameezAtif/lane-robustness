@@ -1,5 +1,7 @@
 # Lane Robustness
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+
 Evaluating the robustness of lane-marking perception under adverse visual conditions.
 
 Lane perception is a critical component of camera-based autonomous driving. This project
@@ -27,8 +29,9 @@ differently — a central finding:
 
 The learned model (trained on BDD100K) is robust to reduced illumination but collapses
 catastrophically under fog — falling *below* the classical baseline — while the classical
-pipeline degrades gracefully under fog but fails in the dark. Full numbers are in
-`outputs/degradation_curve.csv`.
+pipeline degrades gracefully under fog but fails in the dark.
+
+Committed artifacts (exact numbers and plots): see [`results/`](results/).
 
 ## Degradation model
 
@@ -44,10 +47,11 @@ Both transforms are seeded and deterministic.
 ```
 config.py                 # all experiment knobs (severity sweeps, CV params, paths)
 degrade/                  # fog + illumination degradation transforms
-models/                   # classical.py (Canny+Hough), twinlite.py (learned, ONNX)
+models/                   # classical.py (Canny+Hough), twinlite.py + vendored arch
 tusimple/                 # dataset download helper + JSON annotations -> lane masks
 eval/                     # metrics.py, run_experiment.py, plot.py
 scripts/smoke_test.py     # end-to-end check on a synthetic road (no dataset needed)
+results/                  # committed experiment results and plots
 ```
 
 ## Getting started
@@ -57,6 +61,12 @@ Requires Python 3.10+.
 ```sh
 python3 -m venv .venv
 .venv/bin/python -m pip install -r requirements.txt
+```
+
+For a fully reproducible environment, install the pinned set instead:
+
+```sh
+.venv/bin/python -m pip install -r requirements.lock.txt
 ```
 
 Sanity-check the pipeline without downloading any data:
@@ -139,3 +149,27 @@ Images are written under `outputs/dataset/<condition>/<severity>/`.
 - **IoU** — intersection over union between predicted and ground-truth lane masks
 - **F1** — harmonic mean of precision and recall
 - **inference_ms** — wall-clock time per frame
+
+## Reproducibility
+
+- All randomness is seeded (`SEED = 0` in `config.py`); the PyTorch/numpy/Python seeds are set
+  in `eval/run_experiment.py`.
+- `requirements.lock.txt` pins the full dependency set used to produce the committed results.
+- The committed `results/` snapshot records the exact outputs; regenerate them with the
+  commands above.
+
+## Acknowledgements
+
+- **TuSimple dataset**: courtesy of TuSimple; lane-detection benchmark data
+  ([GitHub](https://github.com/TuSimple/tusimple-benchmark), mirror on
+  [Kaggle](https://www.kaggle.com/datasets/manideep1108/tusimple)).
+- **TwinLiteNet**: Che, Quang-Huy, Nguyen, Dinh-Phuc, Pham, Minh-Quan, and Lam, Duc-Khai,
+  "TwinLiteNet: An Efficient and Lightweight Model for Driveable Area and Lane Segmentation in
+  Self-Driving Cars," MAPR 2023. Code and checkpoint from
+  [chequanghuy/TwinLiteNet](https://github.com/chequanghuy/TwinLiteNet) (MIT); the network
+  definition is vendored with attribution in `models/twinlite_arch.py`.
+
+## License
+
+This project is released under the [MIT License](LICENSE). The vendored TwinLiteNet network
+definition retains its original MIT license and attribution.
